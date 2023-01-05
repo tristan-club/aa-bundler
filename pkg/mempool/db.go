@@ -2,6 +2,7 @@ package mempool
 
 import (
 	"encoding/json"
+	"math/big"
 	"strings"
 
 	badger "github.com/dgraph-io/badger/v3"
@@ -12,21 +13,23 @@ import (
 const keySeparator = ":"
 const keyPrefix = "mempool"
 
-func getDBKey(entryPoint common.Address, sender common.Address) []byte {
-	return []byte(keyPrefix + keySeparator + entryPoint.String() + keySeparator + sender.String())
+func getUniqueKey(entryPoint common.Address, sender common.Address, nonce *big.Int) []byte {
+	return []byte(
+		keyPrefix + keySeparator + entryPoint.String() + keySeparator + sender.String() + keySeparator + nonce.String(),
+	)
 }
 
-func getEntryPointAndSenderFromDBKey(key []byte) (common.Address, common.Address) {
+func getEntryPointFromDBKey(key []byte) common.Address {
 	slc := strings.Split(string(key), keySeparator)
-	ep := common.HexToAddress(slc[1])
-	sender := common.HexToAddress(slc[2])
-
-	return ep, sender
+	return common.HexToAddress(slc[1])
 }
 
 func getUserOpFromDBValue(value []byte) (*userop.UserOperation, error) {
 	data := make(map[string]any)
-	json.Unmarshal(value, &data)
+	if err := json.Unmarshal(value, &data); err != nil {
+		return nil, err
+	}
+
 	op, err := userop.New(data)
 	if err != nil {
 		return nil, err
@@ -45,7 +48,7 @@ func loadFromDisk(db *badger.DB, q *userOpQueues) error {
 
 		for it.Seek(prefix); it.ValidForPrefix(prefix); it.Next() {
 			item := it.Item()
-			ep, _ := getEntryPointAndSenderFromDBKey(item.Key())
+			ep := getEntryPointFromDBKey(item.Key())
 
 			err := item.Value(func(v []byte) error {
 				op, err := getUserOpFromDBValue(v)

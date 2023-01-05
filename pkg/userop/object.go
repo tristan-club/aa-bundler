@@ -11,8 +11,9 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func getAbiArgs() abi.Arguments {
-	userOpType, _ := abi.NewType("tuple", "userOp", []abi.ArgumentMarshaling{
+var (
+	// UserOpType is the ABI type of a UserOperation.
+	UserOpType, _ = abi.NewType("tuple", "userOp", []abi.ArgumentMarshaling{
 		{Name: "Sender", Type: "address"},
 		{Name: "Nonce", Type: "uint256"},
 		{Name: "InitCode", Type: "bytes"},
@@ -25,24 +26,27 @@ func getAbiArgs() abi.Arguments {
 		{Name: "PaymasterAndData", Type: "bytes"},
 		{Name: "Signature", Type: "bytes"},
 	})
+)
+
+func getAbiArgs() abi.Arguments {
 	return abi.Arguments{
-		{Name: "UserOp", Type: userOpType},
+		{Name: "UserOp", Type: UserOpType},
 	}
 }
 
 // UserOperation represents an EIP-4337 style transaction for a smart contract account.
 type UserOperation struct {
-	Sender               common.Address `json:"sender" mapstructure:"sender" validate:"required"`
-	Nonce                *big.Int       `json:"nonce" mapstructure:"nonce" validate:"required"`
-	InitCode             []byte         `json:"initCode"  mapstructure:"initCode" validate:"required"`
-	CallData             []byte         `json:"callData" mapstructure:"callData" validate:"required"`
-	CallGasLimit         *big.Int       `json:"callGasLimit" mapstructure:"callGasLimit" validate:"required"`
+	Sender               common.Address `json:"sender"               mapstructure:"sender"               validate:"required"`
+	Nonce                *big.Int       `json:"nonce"                mapstructure:"nonce"                validate:"required"`
+	InitCode             []byte         `json:"initCode"             mapstructure:"initCode"             validate:"required"`
+	CallData             []byte         `json:"callData"             mapstructure:"callData"             validate:"required"`
+	CallGasLimit         *big.Int       `json:"callGasLimit"         mapstructure:"callGasLimit"         validate:"required"`
 	VerificationGasLimit *big.Int       `json:"verificationGasLimit" mapstructure:"verificationGasLimit" validate:"required"`
-	PreVerificationGas   *big.Int       `json:"preVerificationGas" mapstructure:"preVerificationGas" validate:"required"`
-	MaxFeePerGas         *big.Int       `json:"maxFeePerGas" mapstructure:"maxFeePerGas" validate:"required"`
+	PreVerificationGas   *big.Int       `json:"preVerificationGas"   mapstructure:"preVerificationGas"   validate:"required"`
+	MaxFeePerGas         *big.Int       `json:"maxFeePerGas"         mapstructure:"maxFeePerGas"         validate:"required"`
 	MaxPriorityFeePerGas *big.Int       `json:"maxPriorityFeePerGas" mapstructure:"maxPriorityFeePerGas" validate:"required"`
-	PaymasterAndData     []byte         `json:"paymasterAndData" mapstructure:"paymasterAndData" validate:"required"`
-	Signature            []byte         `json:"signature" mapstructure:"signature" validate:"required"`
+	PaymasterAndData     []byte         `json:"paymasterAndData"     mapstructure:"paymasterAndData"     validate:"required"`
+	Signature            []byte         `json:"signature"            mapstructure:"signature"            validate:"required"`
 }
 
 // GetPaymaster returns the address portion of PaymasterAndData if applicable. Otherwise it returns the zero
@@ -53,6 +57,15 @@ func (op *UserOperation) GetPaymaster() common.Address {
 	}
 
 	return common.BytesToAddress(op.PaymasterAndData[:common.AddressLength])
+}
+
+// GetFactory returns the address portion of InitCode if applicable. Otherwise it returns the zero address.
+func (op *UserOperation) GetFactory() common.Address {
+	if len(op.InitCode) < common.AddressLength {
+		return common.HexToAddress("0x")
+	}
+
+	return common.BytesToAddress(op.InitCode[:common.AddressLength])
 }
 
 // GetMaxPrefund returns the max amount of wei required to pay for gas fees by either the sender or
@@ -100,7 +113,9 @@ func (op *UserOperation) Pack() []byte {
 		op.Signature,
 	})
 
-	return packed
+	enc := hexutil.Encode(packed)
+	enc = "0x" + enc[66:]
+	return (hexutil.MustDecode(enc))
 }
 
 // PackForSignature returns a minimal message of the userOp. This can be used to generate a userOpHash.
@@ -163,14 +178,14 @@ func (op *UserOperation) MarshalJSON() ([]byte, error) {
 		Signature            string `json:"signature"`
 	}{
 		Sender:               op.Sender.String(),
-		Nonce:                op.Nonce.String(),
+		Nonce:                hexutil.EncodeBig(op.Nonce),
 		InitCode:             hexutil.Encode(op.InitCode),
 		CallData:             hexutil.Encode(op.CallData),
-		CallGasLimit:         op.CallGasLimit.String(),
-		VerificationGasLimit: op.CallGasLimit.String(),
-		PreVerificationGas:   op.PreVerificationGas.String(),
-		MaxFeePerGas:         op.MaxFeePerGas.String(),
-		MaxPriorityFeePerGas: op.MaxPriorityFeePerGas.String(),
+		CallGasLimit:         hexutil.EncodeBig(op.CallGasLimit),
+		VerificationGasLimit: hexutil.EncodeBig(op.VerificationGasLimit),
+		PreVerificationGas:   hexutil.EncodeBig(op.PreVerificationGas),
+		MaxFeePerGas:         hexutil.EncodeBig(op.MaxFeePerGas),
+		MaxPriorityFeePerGas: hexutil.EncodeBig(op.MaxPriorityFeePerGas),
 		PaymasterAndData:     hexutil.Encode(op.PaymasterAndData),
 		Signature:            hexutil.Encode(op.Signature),
 	})

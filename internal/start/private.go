@@ -82,7 +82,8 @@ func PrivateMode() {
 	paymaster := paymaster.New(db)
 
 	// Init Client
-	c := client.New(mem, chain, conf.SupportedEntryPoints)
+	c := client.New(mem, chain, conf.SupportedEntryPoints, conf.MaxVerificationGas)
+	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(eth))
 	c.UseLogger(logr)
 	c.UseModules(
 		check.ValidateOpValues(),
@@ -99,25 +100,38 @@ func PrivateMode() {
 		relayer.SendUserOperation(),
 		paymaster.IncOpsIncluded(),
 	)
-	b.Run()
+	if err := b.Run(); err != nil {
+		log.Fatal(err)
+	}
+
+	// init Debug
+	var d *client.Debug
+	if conf.DebugMode {
+		d = client.NewDebug(eoa, eth, mem, b, chain, conf.SupportedEntryPoints[0], beneficiary)
+		relayer.SetBannedThreshold(relay.NoBanThreshold)
+	}
 
 	// Init HTTP server
 	gin.SetMode(conf.GinMode)
 	r := gin.New()
+	if err := r.SetTrustedProxies(nil); err != nil {
+		log.Fatal(err)
+	}
 	r.Use(
 		cors.Default(),
 		logger.WithLogr(logr),
 		gin.Recovery(),
 	)
-	r.SetTrustedProxies(nil)
 	r.GET("/ping", func(g *gin.Context) {
 		g.Status(http.StatusOK)
 	})
 	r.POST(
 		"/",
 		relayer.FilterByClientID(),
-		jsonrpc.Controller(client.NewRpcAdapter(c)),
+		jsonrpc.Controller(client.NewRpcAdapter(c, d)),
 		relayer.MapUserOpHashToClientID(),
 	)
-	r.Run(fmt.Sprintf(":%d", conf.Port))
+	if err := r.Run(fmt.Sprintf(":%d", conf.Port)); err != nil {
+		log.Fatal(err)
+	}
 }

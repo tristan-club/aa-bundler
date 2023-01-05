@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
+	"github.com/stackup-wallet/stackup-bundler/pkg/errors"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"golang.org/x/sync/errgroup"
 )
@@ -34,19 +35,27 @@ func New(rpc *rpc.Client, maxVerificationGas *big.Int, tracer string) *Standalon
 // received by the Client. This should be one of the first modules executed by the Client.
 func (s *Standalone) ValidateOpValues() modules.UserOpHandlerFunc {
 	return func(ctx *modules.UserOpHandlerCtx) error {
-		ep, err := entrypoint.NewEntrypoint(ctx.EntryPoint, s.eth)
+		penOps := ctx.GetPendingOps()
+		gc := getCodeWithEthClient(s.eth)
+		gbf := getBaseFeeWithEthClient(s.eth)
+		gs, err := getStakeWithEthClient(ctx, s.eth)
 		if err != nil {
 			return err
 		}
 
 		g := new(errgroup.Group)
-		g.Go(func() error { return checkSender(s.eth, ctx.UserOp) })
-		g.Go(func() error { return checkVerificationGas(s.maxVerificationGas, ctx.UserOp) })
-		g.Go(func() error { return checkPaymasterAndData(s.eth, ep, ctx.UserOp) })
-		g.Go(func() error { return checkCallGasLimit(ctx.UserOp) })
-		g.Go(func() error { return checkFeePerGas(s.eth, ctx.UserOp) })
+		g.Go(func() error { return ValidateSender(ctx.UserOp, gc) })
+		g.Go(func() error { return ValidateInitCode(ctx.UserOp, gs) })
+		g.Go(func() error { return ValidateVerificationGas(ctx.UserOp, s.maxVerificationGas) })
+		g.Go(func() error { return ValidatePaymasterAndData(ctx.UserOp, gc, gs) })
+		g.Go(func() error { return ValidateCallGasLimit(ctx.UserOp) })
+		g.Go(func() error { return ValidateFeePerGas(ctx.UserOp, gbf) })
+		g.Go(func() error { return ValidatePendingOps(ctx.UserOp, penOps, gs) })
 
-		return g.Wait()
+		if err := g.Wait(); err != nil {
+			return errors.NewRPCError(errors.INVALID_FIELDS, err.Error(), err.Error())
+		}
+		return nil
 	}
 }
 
@@ -56,10 +65,30 @@ func (s *Standalone) SimulateOp() modules.UserOpHandlerFunc {
 		g := new(errgroup.Group)
 		g.Go(func() error {
 			_, err := entrypoint.SimulateValidation(s.rpc, ctx.EntryPoint, ctx.UserOp)
-			return err
+
+			if err != nil {
+				return errors.NewRPCError(errors.REJECTED_BY_EP_OR_ACCOUNT, err.Error(), err.Error())
+			}
+			return nil
 		})
 		g.Go(func() error {
-			return entrypoint.TraceSimulateValidation(s.rpc, ctx.EntryPoint, ctx.UserOp, ctx.ChainID, s.tracer)
+			err := entrypoint.TraceSimulateValidation(
+				s.rpc,
+				ctx.EntryPoint,
+				ctx.UserOp,
+				ctx.ChainID,
+				s.tracer,
+				entrypoint.EntityStakes{
+					ctx.UserOp.GetFactory():   ctx.GetDepositInfo(ctx.UserOp.GetFactory()),
+					ctx.UserOp.Sender:         ctx.GetDepositInfo(ctx.UserOp.Sender),
+					ctx.UserOp.GetPaymaster(): ctx.GetDepositInfo(ctx.UserOp.GetPaymaster()),
+				},
+			)
+
+			if err != nil {
+				return errors.NewRPCError(errors.BANNED_OPCODE, err.Error(), err.Error())
+			}
+			return nil
 		})
 
 		return g.Wait()

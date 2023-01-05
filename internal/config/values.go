@@ -23,6 +23,7 @@ type Values struct {
 	Beneficiary          string
 
 	// Undocumented variables.
+	DebugMode              bool
 	GinMode                string
 	BundlerCollectorTracer string
 }
@@ -43,8 +44,9 @@ func GetValues() *Values {
 	// Default variables
 	viper.SetDefault("erc4337_bundler_port", 4337)
 	viper.SetDefault("erc4337_bundler_data_directory", "/tmp/stackup_bundler")
-	viper.SetDefault("erc4337_bundler_supported_entry_points", "0x78d4f01f56b982a3B03C4E127A5D3aFa8EBee686")
+	viper.SetDefault("erc4337_bundler_supported_entry_points", "0x1306b01bC3e4AD202612D3843387e94737673F53")
 	viper.SetDefault("erc4337_bundler_max_verification_gas", 1500000)
+	viper.SetDefault("erc4337_bundler_debug_mode", false)
 	viper.SetDefault("erc4337_bundler_gin_mode", gin.ReleaseMode)
 
 	// Read in from .env file if available
@@ -61,17 +63,34 @@ func GetValues() *Values {
 	}
 
 	// Read in from environment variables
-	viper.BindEnv("erc4337_bundler_eth_client_url")
-	viper.BindEnv("erc4337_bundler_private_key")
-	viper.BindEnv("erc4337_bundler_port")
-	viper.BindEnv("erc4337_bundler_data_directory")
-	viper.BindEnv("erc4337_bundler_supported_entry_points")
-	viper.BindEnv("erc4337_bundler_beneficiary")
-	viper.BindEnv("erc4337_bundler_max_verification_gas")
-	viper.BindEnv("erc4337_bundler_gin_mode")
+	if err := viper.BindEnv("erc4337_bundler_eth_client_url"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_private_key"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_port"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_data_directory"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_supported_entry_points"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_beneficiary"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_max_verification_gas"); err != nil {
+		panic(err)
+	}
+	if err := viper.BindEnv("erc4337_bundler_gin_mode"); err != nil {
+		panic(err)
+	}
 
 	// Validate required variables
-	if !viper.IsSet("erc4337_bundler_eth_client_url") || viper.GetString("erc4337_bundler_eth_client_url") == "" {
+	if !viper.IsSet("erc4337_bundler_eth_client_url") ||
+		viper.GetString("erc4337_bundler_eth_client_url") == "" {
 		panic("Fatal config error: erc4337_bundler_eth_client_url not set")
 	}
 
@@ -94,15 +113,25 @@ func GetValues() *Values {
 	}
 
 	// Return Values
+	privateKey := viper.GetString("erc4337_bundler_private_key")
+	ethClientUrl := viper.GetString("erc4337_bundler_eth_client_url")
+	port := viper.GetInt("erc4337_bundler_port")
+	dataDirectory := viper.GetString("erc4337_bundler_data_directory")
+	supportedEntryPoints := envArrayToAddressSlice(viper.GetString("erc4337_bundler_supported_entry_points"))
+	beneficiary := viper.GetString("erc4337_bundler_beneficiary")
+	maxVerificationGas := big.NewInt(int64(viper.GetInt("erc4337_bundler_max_verification_gas")))
+	debugMode := viper.GetBool("erc4337_bundler_debug_mode")
+	ginMode := viper.GetString("erc4337_bundler_gin_mode")
 	return &Values{
-		PrivateKey:             viper.GetString("erc4337_bundler_private_key"),
-		EthClientUrl:           viper.GetString("erc4337_bundler_eth_client_url"),
-		Port:                   viper.GetInt("erc4337_bundler_port"),
-		DataDirectory:          viper.GetString("erc4337_bundler_data_directory"),
-		SupportedEntryPoints:   envArrayToAddressSlice(viper.GetString("erc4337_bundler_supported_entry_points")),
-		Beneficiary:            viper.GetString("erc4337_bundler_beneficiary"),
-		MaxVerificationGas:     big.NewInt(int64(viper.GetInt("erc4337_bundler_max_verification_gas"))),
-		GinMode:                viper.GetString("erc4337_bundler_gin_mode"),
+		PrivateKey:             privateKey,
+		EthClientUrl:           ethClientUrl,
+		Port:                   port,
+		DataDirectory:          dataDirectory,
+		SupportedEntryPoints:   supportedEntryPoints,
+		Beneficiary:            beneficiary,
+		MaxVerificationGas:     maxVerificationGas,
+		DebugMode:              debugMode,
+		GinMode:                ginMode,
 		BundlerCollectorTracer: bct,
 	}
 }
